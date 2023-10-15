@@ -25,8 +25,12 @@ package pascal.taie.analysis.dataflow.analysis;
 import pascal.taie.analysis.dataflow.fact.SetFact;
 import pascal.taie.analysis.graph.cfg.CFG;
 import pascal.taie.config.AnalysisConfig;
+import pascal.taie.ir.exp.FieldAccess;
+import pascal.taie.ir.exp.LValue;
+import pascal.taie.ir.exp.RValue;
 import pascal.taie.ir.exp.Var;
 import pascal.taie.ir.stmt.Stmt;
+import java.util.Optional;
 
 /**
  * Implementation of classic live variable analysis.
@@ -47,24 +51,37 @@ public class LiveVariableAnalysis extends
 
     @Override
     public SetFact<Var> newBoundaryFact(CFG<Stmt> cfg) {
-        // TODO - finish me
-        return null;
+        return new SetFact<>();
     }
 
     @Override
     public SetFact<Var> newInitialFact() {
-        // TODO - finish me
-        return null;
+        return new SetFact<>();
     }
 
     @Override
     public void meetInto(SetFact<Var> fact, SetFact<Var> target) {
-        // TODO - finish me
+        target.union(fact); // OUT[B] = Union_succ(IN[S])
     }
 
     @Override
     public boolean transferNode(Stmt stmt, SetFact<Var> in, SetFact<Var> out) {
-        // TODO - finish me
-        return false;
+        // IN[B] = use_B Union (OUT[B] - def_B)
+        SetFact<Var> res = new SetFact<Var>();
+        res.set(out);
+        Optional<LValue> def = stmt.getDef();
+        if (def.isPresent()) {
+            LValue lValue = def.get();
+            if (lValue instanceof Var)  res.remove((Var) lValue);
+            // LValue not Var? remove non-exist Var?
+        }
+        for (RValue rValue : stmt.getUses()) {
+            if (rValue instanceof Var) {
+                res.add((Var) rValue);
+            }
+        }
+        boolean isSame = in.equals(res);
+        in.set(res);
+        return !isSame; //??
     }
 }
