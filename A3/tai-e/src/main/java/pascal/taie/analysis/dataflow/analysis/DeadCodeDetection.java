@@ -33,21 +33,14 @@ import pascal.taie.analysis.graph.cfg.CFGBuilder;
 import pascal.taie.analysis.graph.cfg.Edge;
 import pascal.taie.config.AnalysisConfig;
 import pascal.taie.ir.IR;
-import pascal.taie.ir.exp.ArithmeticExp;
-import pascal.taie.ir.exp.ArrayAccess;
-import pascal.taie.ir.exp.CastExp;
-import pascal.taie.ir.exp.FieldAccess;
-import pascal.taie.ir.exp.NewExp;
-import pascal.taie.ir.exp.RValue;
-import pascal.taie.ir.exp.Var;
+import pascal.taie.ir.exp.*;
 import pascal.taie.ir.stmt.AssignStmt;
 import pascal.taie.ir.stmt.If;
 import pascal.taie.ir.stmt.Stmt;
 import pascal.taie.ir.stmt.SwitchStmt;
+import soot.jimple.IfStmt;
 
-import java.util.Comparator;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.*;
 
 public class DeadCodeDetection extends MethodAnalysis {
 
@@ -68,8 +61,58 @@ public class DeadCodeDetection extends MethodAnalysis {
         DataflowResult<Stmt, SetFact<Var>> liveVars =
                 ir.getResult(LiveVariableAnalysis.ID);
         // keep statements (dead code) sorted in the resulting set
-        Set<Stmt> deadCode = new TreeSet<>(Comparator.comparing(Stmt::getIndex));
-        // TODO - finish me
+        Set<Stmt> deadCode = new TreeSet<>(Comparator.comparing(Stmt::getIndex)); // 红黑树实现的集合数据类型，并且提供了一个比较器来为 Stmt 排序
+        Set<Stmt> liveCode = new TreeSet<>(Comparator.comparing(Stmt::getIndex));
+        Queue<Stmt> stmtList = new LinkedList<Stmt>();
+        stmtList.add(cfg.getEntry());
+        while (!stmtList.isEmpty()) {
+            Stmt stmt = stmtList.poll();
+            if (deadCode.contains(stmt) || liveCode.contains(stmt)) continue;
+            if (stmt instanceof AssignStmt<?,?>) {
+                LValue lValue = ((AssignStmt<?, ?>) stmt).getLValue();
+                RValue rValue = ((AssignStmt<?, ?>) stmt).getRValue();
+                if (lValue instanceof Var && !liveVars.getOutFact(stmt).contains((Var) lValue) && hasNoSideEffect(rValue)) {
+                    deadCode.add(stmt);
+                }//注意这里是liveVars.getOutFact(stmt)
+                else liveCode.add(stmt);
+                stmtList.addAll(cfg.getSuccsOf(stmt));
+            }
+            else if (stmt instanceof If) {
+                liveCode.add(stmt);
+                Value conditionValue = ConstantPropagation.evaluate(((If) stmt).getCondition(), constants.getInFact(stmt));
+                if (conditionValue.isConstant()) {
+                    Edge.Kind edgeKind = (conditionValue.getConstant() == 0) ? Edge.Kind.IF_FALSE : Edge.Kind.IF_TRUE;
+                    for (Edge<Stmt> edge : cfg.getOutEdgesOf(stmt)) {
+                        if (edge.getKind() == edgeKind) stmtList.add(edge.getTarget());
+                    }
+                }
+                else stmtList.addAll(cfg.getSuccsOf(stmt));
+            }
+            else if (stmt instanceof SwitchStmt) {
+                liveCode.add(stmt);
+                Value conditionValue = ConstantPropagation.evaluate(((SwitchStmt) stmt).getVar(), constants.getInFact(stmt));
+                if (conditionValue.isConstant()) {
+                    boolean isFound = false;
+                    for (Edge<Stmt> edge : cfg.getOutEdgesOf(stmt)) {
+                        if (edge.getKind() == Edge.Kind.SWITCH_CASE && edge.getCaseValue() == conditionValue.getConstant()) {
+                            stmtList.add(edge.getTarget());
+                            isFound = true;
+                        }
+                    }
+                    if (!isFound) stmtList.add(((SwitchStmt) stmt).getDefaultTarget());
+                }
+                else stmtList.addAll(cfg.getSuccsOf(stmt));
+            }
+            else {
+                liveCode.add(stmt);
+                stmtList.addAll(cfg.getSuccsOf(stmt));
+            }
+        }
+        for (Stmt stmt : cfg.getIR().getStmts()) {
+            if (!liveCode.contains(stmt)) deadCode.add(stmt);
+        }
+
+
         // Your task is to recognize dead code in ir and add it to deadCode
         return deadCode;
     }
