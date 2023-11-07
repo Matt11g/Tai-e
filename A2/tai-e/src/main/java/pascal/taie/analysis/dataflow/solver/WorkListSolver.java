@@ -26,6 +26,9 @@ import pascal.taie.analysis.dataflow.analysis.DataflowAnalysis;
 import pascal.taie.analysis.dataflow.fact.DataflowResult;
 import pascal.taie.analysis.graph.cfg.CFG;
 
+import java.util.Queue;
+import java.util.LinkedList;
+
 class WorkListSolver<Node, Fact> extends Solver<Node, Fact> {
 
     WorkListSolver(DataflowAnalysis<Node, Fact> analysis) {
@@ -34,7 +37,36 @@ class WorkListSolver<Node, Fact> extends Solver<Node, Fact> {
 
     @Override
     protected void doSolveForward(CFG<Node> cfg, DataflowResult<Node, Fact> result) {
-        // TODO - finish me
+        Queue<Node> workList = new LinkedList<Node>();
+        for (Node node : cfg) workList.add(node);
+        while (!workList.isEmpty()) {
+            Node node = workList.poll();
+            //Fact temp = result.getOutFact(node);
+            result.setInFact(node, analysis.newInitialFact()); // 总感觉要清空？？
+            for (Node pre : cfg.getPredsOf(node)) {
+                analysis.meetInto(result.getOutFact(pre), result.getInFact(node));
+            }
+            if (analysis.transferNode(node, result.getInFact(node), result.getOutFact(node))) { //FixBug: 修改用伪代码中用temp判断，WHY??
+                //workList.addAll(cfg.getSuccsOf(node)); // 没去重的写法，不过感觉没有问题
+                for (Node success : cfg.getSuccsOf(node)) {
+                    if (!workList.contains(success)) workList.add(success);
+                }
+            }
+            //  还是 if (transferNode()) workList.add(..);  ??
+        }
+//        boolean isChange = true;
+//        while (isChange) {
+//            isChange = false;
+//            for (Node node : cfg) {
+//                if (cfg.isEntry(node)) continue;
+//                for (Node pre : cfg.getPredsOf(node)) {
+//                    analysis.meetInto(result.getOutFact(pre), result.getInFact(node));
+//                }
+//                if (analysis.transferNode(node, result.getInFact(node), result.getOutFact(node))) {
+//                    isChange = true; // changes to any OUT occurs
+//                }
+//            }
+//        }
     }
 
     @Override
